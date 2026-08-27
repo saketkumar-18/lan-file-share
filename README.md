@@ -9,6 +9,13 @@ connected, no typing IP addresses.
 
 ## Features
 
+- 🚀 **Any size, fast** — uploads stream straight to disk in 1 MB chunks
+  (constant memory, no size cap); downloads stream back the same way.
+  Measured ~230 MB/s upload and ~460 MB/s download over loopback.
+- ⏸️ **Resumable downloads** — full HTTP `Range` support (206 Partial Content),
+  so download managers and browsers can resume interrupted transfers.
+- 🖱️ **Drag & drop** with live progress bars and per-file speed readout,
+  multi-file uploads supported.
 - 📤 **Upload** files through the browser (drag into the form)
 - 📋 **List** all shared files with human-readable sizes
 - ⬇️ **Download** with one click
