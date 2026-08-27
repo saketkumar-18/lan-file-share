@@ -19,6 +19,7 @@ import shutil
 import socket
 import mimetypes
 from pathlib import Path
+from urllib.parse import quote
 import qrcode
 import qrcode.image.svg
 
@@ -177,6 +178,12 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
     return bps.toFixed(1) + ' ' + u[i];
   }
 
+  function fmtSize(b) {
+    var u = ['B','KB','MB','GB','TB']; var i = 0;
+    while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+    return (i === 0 ? b : b.toFixed(1)) + ' ' + u[i];
+  }
+
   function makeBar(name) {
     var el = document.createElement('div');
     el.className = 'bar';
@@ -191,6 +198,14 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
       set: function (frac, bps) {
         el.querySelector('.fill').style.width = (frac * 100).toFixed(1) + '%';
         var st = (frac * 100).toFixed(0) + '%';
+        if (bps) st += ' &middot; ' + fmtSpeed(bps);
+        el.querySelector('.st').innerHTML = st;
+      },
+      setBytes: function (received, total, bps) {
+        var frac = total > 0 ? received / total : 0;
+        el.querySelector('.fill').style.width = (frac * 100).toFixed(1) + '%';
+        var st = fmtSize(received) + (total > 0 ? ' / ' + fmtSize(total) : '');
+        st += ' &middot; ' + (frac * 100).toFixed(0) + '%';
         if (bps) st += ' &middot; ' + fmtSpeed(bps);
         el.querySelector('.st').innerHTML = st;
       },
@@ -231,6 +246,78 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
     for (var i = 0; i < list.length; i++) uploadOne(list[i]);
   }
 
+  // ---- real-time receiving progress ----
+  // Preferred: File System Access API streams chunks straight to disk (no RAM
+  // buffering, truly any size). Fallback: Blob in memory (older browsers).
+  function downloadFile(name, size, href) {
+    var bar = makeBar(name);
+    var lastBytes = 0, lastT = Date.now();
+
+    function onChunk(received, total) {
+      var now = Date.now(), dt = (now - lastT) / 1000;
+      var bps = dt > 0 ? (received - lastBytes) / dt : 0;
+      lastBytes = received; lastT = now;
+      bar.setBytes(received, total, bps);
+    }
+
+    function streamTo(resp, writeChunk, finish) {
+      var total = parseInt(resp.headers.get('Content-Length') || '', 10) || size || 0;
+      var reader = resp.body.getReader();
+      var received = 0;
+      function pump() {
+        return reader.read().then(function (r) {
+          if (r.done) return finish();
+          received += r.value.length;
+          onChunk(received, total);
+          return writeChunk(r.value).then(pump);
+        });
+      }
+      return pump();
+    }
+
+    fetch(href).then(function (resp) {
+      if (!resp.ok) { bar.error(); throw new Error('HTTP ' + resp.status); }
+
+      if (window.showSaveFilePicker) {
+        // Stream directly to a user-chosen file on disk
+        return window.showSaveFilePicker({ suggestedName: name }).then(function (handle) {
+          return handle.createWritable().then(function (writable) {
+            return streamTo(resp,
+              function (chunk) { return writable.write(chunk); },
+              function () { return writable.close().then(function () { bar.done(); }); }
+            );
+          });
+        }).catch(function (err) {
+          if (err && err.name === 'AbortError') { bar.el.remove(); } // user cancelled picker
+          else { bar.error(); }
+        });
+      }
+
+      // Fallback: buffer in memory, then save
+      var chunks = [];
+      return streamTo(resp,
+        function (chunk) { chunks.push(chunk); return Promise.resolve(); },
+        function () {
+          var blob = new Blob(chunks);
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = name;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+          bar.done();
+        }
+      );
+    }).catch(function () { bar.error(); });
+  }
+
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest ? e.target.closest('a.dl') : null;
+    if (!a) return;
+    e.preventDefault();
+    downloadFile(a.getAttribute('data-name'), parseInt(a.getAttribute('data-size'), 10) || 0, a.getAttribute('href'));
+  });
+
   input.addEventListener('change', function () { uploadFiles(input.files); input.value = ''; });
   drop.addEventListener('click', function () { input.click(); });
   ['dragenter','dragover'].forEach(function (ev) {
@@ -261,12 +348,13 @@ async def index():
         rows = []
         for name, size in files:
             esc = html.escape(name, quote=True)
+            url_name = quote(name)
             rows.append(
                 f'<tr><td class="file-name">{esc}</td>'
                 f'<td class="file-size">{format_size(size)}</td>'
                 f'<td class="actions">'
-                f'<a href="/files/{html.escape(name, quote=True)}">Download</a>'
-                f'<a href="/delete/{html.escape(name, quote=True)}" class="delete" '
+                f'<a href="/files/{url_name}" class="dl" data-name="{esc}" data-size="{size}">Download</a>'
+                f'<a href="/delete/{url_name}" class="delete" '
                 f"onclick=\"return confirm('Delete {esc}?')\">Delete</a>"
                 f"</td></tr>"
             )
