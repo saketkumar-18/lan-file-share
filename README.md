@@ -16,6 +16,9 @@ connected, no typing IP addresses.
   so download managers and browsers can resume interrupted transfers.
 - 🖱️ **Drag & drop** with live progress bars and per-file speed readout,
   multi-file uploads supported.
+- 📥 **Real-time receiving progress** — the downloading device sees a live
+  "received / total · %" bar with speed, and the file streams straight to disk
+  (File System Access API) instead of buffering in memory.
 - 📤 **Upload** files through the browser (drag into the form)
 - 📋 **List** all shared files with human-readable sizes
 - ⬇️ **Download** with one click
