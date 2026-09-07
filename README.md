@@ -1,3 +1,5 @@
+> **Note:** this app is designed for your LAN. A public instance is online for a quick look — https://lan-file-share.onrender.com — but file sharing over the internet is not its purpose; run it locally for real use.
+
 # 📁 LAN File Share
 
 A tiny, zero-config file-sharing server for your local network. Drop it on one
